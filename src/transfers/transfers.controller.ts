@@ -22,7 +22,7 @@ import {
   ApiBody,
   ApiParam,
 } from '@nestjs/swagger';
-import { CurrentUser } from 'src/common/decorators/currentUser.decorator';
+import { CurrentUser } from '../common/decorators/currentUser.decorator';
 import {
   PaginatedTransferListingsResponseDto,
   BuyResponseDto,

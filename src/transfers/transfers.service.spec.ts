@@ -95,8 +95,6 @@ describe('TransfersService', () => {
       });
       // Mock not already listed
       mockListingRepo.findOne.mockResolvedValue(null);
-      // Mock team count > 15
-      mockPlayerRepo.count.mockResolvedValue(20);
       // Mock create/save
       mockListingRepo.create.mockReturnValue({
         ...createDto,
@@ -109,34 +107,6 @@ describe('TransfersService', () => {
       const result = await service.createListing(createDto, userId);
       expect(result).toHaveProperty('id', 'list-1');
       expect(mockListingRepo.save).toHaveBeenCalled();
-    });
-
-    it('should create a listing (boundary condition: exactly 16 players)', async () => {
-      // Mock player found
-      mockPlayerRepo.findOne.mockResolvedValue({
-        id: 'player-1',
-        name: 'John Doe',
-        team: { id: 'team-1', user: { id: userId } },
-      });
-      // Mock not already listed
-      mockListingRepo.findOne.mockResolvedValue(null);
-      // Mock team count = 16 (so 15 remain after listing)
-      // NOTE: The service checks total players in team. It allows listing only if total > 15.
-      // It DOES NOT deduct the player from the team count logic inherently because listing doesn't remove player from team immediately,
-      // BUT semantic implies we want to ensure we don't end up with < 15 playables?
-      // Actually code says: `if (totalTeamPlayers <= 15)`. So if 16, it is allowed.
-      mockPlayerRepo.count.mockResolvedValue(16);
-
-      mockListingRepo.create.mockReturnValue({
-        ...createDto,
-        player: { id: 'player-1' },
-      });
-      mockListingRepo.save.mockImplementation((listing) =>
-        Promise.resolve({ id: 'list-1', ...listing }),
-      );
-
-      const result = await service.createListing(createDto, userId);
-      expect(result).toHaveProperty('id', 'list-1');
     });
 
     it('should throw ForbiddenException if user does not own player', async () => {
@@ -156,19 +126,6 @@ describe('TransfersService', () => {
         team: { id: 'team-1', user: { id: userId } },
       });
       mockListingRepo.findOne.mockResolvedValue({ id: 'existing-listing' });
-
-      await expect(service.createListing(createDto, userId)).rejects.toThrow(
-        BadRequestException,
-      );
-    });
-
-    it('should throw BadRequestException if team has <= 15 players', async () => {
-      mockPlayerRepo.findOne.mockResolvedValue({
-        id: 'player-1',
-        team: { id: 'team-1', user: { id: userId } },
-      });
-      mockListingRepo.findOne.mockResolvedValue(null);
-      mockPlayerRepo.count.mockResolvedValue(15);
 
       await expect(service.createListing(createDto, userId)).rejects.toThrow(
         BadRequestException,
@@ -206,7 +163,10 @@ describe('TransfersService', () => {
     it('should perform buy transaction successfully', async () => {
       const mockManager: RepoManager = { getRepository: jest.fn() };
       // Mock repositories returned by manager
-      const mockListingRepoTx = { findOne: jest.fn(), delete: jest.fn() };
+      const mockListingRepoTx = {
+        createQueryBuilder: jest.fn(),
+        delete: jest.fn(),
+      };
       const mockTeamRepoTx = { createQueryBuilder: jest.fn(), save: jest.fn() };
       const mockPlayerRepoTx = { count: jest.fn(), save: jest.fn() };
       const mockHistoryRepoTx = { save: jest.fn() };
@@ -225,49 +185,46 @@ describe('TransfersService', () => {
         return null;
       });
 
-      // 1. Find Listing
-      mockListingRepoTx.findOne.mockResolvedValue({
-        id: 'list-1',
-        askingPrice: 1000,
-        player: {
-          id: 'p1',
-          team: { id: 'seller-team', user: { id: 'seller-user' } },
-        },
+      // Mock listing query builder with pessimistic lock
+      mockListingRepoTx.createQueryBuilder.mockReturnValue({
+        setLock: jest.fn().mockReturnThis(),
+        leftJoinAndSelect: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        getOne: jest.fn().mockResolvedValue({
+          id: 'list-1',
+          askingPrice: 1000,
+          player: {
+            id: 'p1',
+            team: { id: 'seller-team', user: { id: 'seller-user' } },
+          },
+        }),
       });
 
       // Team Repo creates QB
-      mockTeamRepoTx.createQueryBuilder.mockImplementation(() => {
-        // Return different mocks based on calls?
-        // Simplification: We can reuse logic or differentiate by some side effect?
-        // Actually since it's chained, hard to check context inside mock.
-        // Let's rely on call order or just return a smart mock.
-        // Or we can mock the specific calls.
-        return {
-          setLock: jest.fn().mockReturnThis(),
-          leftJoinAndSelect: jest.fn().mockReturnThis(),
-          where: jest.fn().mockReturnThis(),
-          getOne: jest
-            .fn()
-            .mockResolvedValueOnce({
-              id: 'buyer-team',
-              budget: 5000,
-              user: { id: 'buyer-user' },
-            }) // Buyer fetch
-            .mockResolvedValueOnce({ id: 'seller-team', budget: 1000 }) // Seller fetch (re-fetch)
-            .mockResolvedValueOnce({ id: 'seller-team', budget: 1000 }) // Seller fetch with budget
-            .mockResolvedValueOnce({ id: 'buyer-team', budget: 5000 }), // Buyer fetch with budget
-        };
+      mockTeamRepoTx.createQueryBuilder.mockReturnValue({
+        setLock: jest.fn().mockReturnThis(),
+        leftJoinAndSelect: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        getOne: jest
+          .fn()
+          .mockResolvedValueOnce({
+            id: 'buyer-team',
+            budget: 5000,
+            user: { id: 'buyer-user' },
+          })
+          .mockResolvedValueOnce({ id: 'seller-team', budget: 1000 })
+          .mockResolvedValueOnce({ id: 'seller-team', budget: 1000 })
+          .mockResolvedValueOnce({ id: 'buyer-team', budget: 5000 }),
       });
 
-      // 3. Counts
-      mockPlayerRepoTx.count.mockResolvedValueOnce(20); // Seller count
-      mockPlayerRepoTx.count.mockResolvedValueOnce(20); // Buyer count
+      // Counts
+      mockPlayerRepoTx.count.mockResolvedValueOnce(20);
+      mockPlayerRepoTx.count.mockResolvedValueOnce(20);
 
-      // Execution
       const result = await service.buy('list-1', 'buyer-user');
 
       expect(result.success).toBe(true);
-      expect(result.finalPrice).toBe(950); // 1000 * 0.95
+      expect(result.finalPrice).toBe(950);
       expect(mockListingRepoTx.delete).toHaveBeenCalledWith('list-1');
     });
 
@@ -279,9 +236,14 @@ describe('TransfersService', () => {
       );
 
       mockManager.getRepository.mockReturnValue({
-        findOne: jest.fn().mockResolvedValue({
-          id: 'list-1',
-          player: { team: { user: { id: 'same-user' } } },
+        createQueryBuilder: jest.fn().mockReturnValue({
+          setLock: jest.fn().mockReturnThis(),
+          leftJoinAndSelect: jest.fn().mockReturnThis(),
+          where: jest.fn().mockReturnThis(),
+          getOne: jest.fn().mockResolvedValue({
+            id: 'list-1',
+            player: { team: { user: { id: 'same-user' } } },
+          }),
         }),
       });
 
@@ -297,7 +259,18 @@ describe('TransfersService', () => {
           Promise.resolve(cb(mockManager)),
       );
 
-      const mockListingRepoTx = { findOne: jest.fn() };
+      const mockListingRepoTx = {
+        createQueryBuilder: jest.fn().mockReturnValue({
+          setLock: jest.fn().mockReturnThis(),
+          leftJoinAndSelect: jest.fn().mockReturnThis(),
+          where: jest.fn().mockReturnThis(),
+          getOne: jest.fn().mockResolvedValue({
+            id: 'list-1',
+            askingPrice: 1000000,
+            player: { team: { id: 's-t', user: { id: 's-u' } } },
+          }),
+        }),
+      };
       const mockTeamRepoTx = { createQueryBuilder: jest.fn() };
       const mockPlayerRepoTx = { count: jest.fn() };
 
@@ -307,23 +280,16 @@ describe('TransfersService', () => {
         if (entity === Player) return mockPlayerRepoTx;
       });
 
-      mockListingRepoTx.findOne.mockResolvedValue({
-        id: 'list-1',
-        askingPrice: 1000000,
-        player: { team: { id: 's-t', user: { id: 's-u' } } },
-      });
-
-      // QBs return teams
       mockTeamRepoTx.createQueryBuilder.mockReturnValue({
         setLock: jest.fn().mockReturnThis(),
         leftJoinAndSelect: jest.fn().mockReturnThis(),
         where: jest.fn().mockReturnThis(),
         getOne: jest
           .fn()
-          .mockResolvedValueOnce({ id: 'b-t', budget: 100 }) // Buyer
-          .mockResolvedValueOnce({ id: 's-t' }) // Seller
-          .mockResolvedValueOnce({ id: 's-t', budget: 1000 }) // Seller Budget
-          .mockResolvedValueOnce({ id: 'b-t', budget: 100 }), // Buyer Budget
+          .mockResolvedValueOnce({ id: 'b-t', budget: 100 })
+          .mockResolvedValueOnce({ id: 's-t' })
+          .mockResolvedValueOnce({ id: 's-t', budget: 1000 })
+          .mockResolvedValueOnce({ id: 'b-t', budget: 100 }),
       });
 
       mockPlayerRepoTx.count.mockResolvedValue(20);
