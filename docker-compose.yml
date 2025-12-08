@@ -13,6 +13,7 @@ services:
       - DB_USER=postgres
       - DB_PASSWORD=postgres
       - DB_NAME=football_manager
+      - JWT_SECRET=your-secret-key-here
     depends_on:
       - redis
       - postgres

@@ -3,16 +3,37 @@ import {
   NotFoundException,
   BadRequestException,
   ForbiddenException,
+  Inject,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
+import { Logger } from '@nestjs/common';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import type { Cache } from 'cache-manager';
 import { TransferListing } from './entities/transfer-listing.entity';
 import { Player } from '../players/entities/player.entity';
 import { Team } from '../teams/entities/team.entity';
 import { CreateListingDto } from './dto/create-listing.dto';
+import {
+  PAGINATION_CONSTRAINTS,
+  TEAM_CONSTRAINTS,
+  TRANSFER_RULES,
+} from '../config/constants';
+import { TransferHistory } from './entities/transfer-history.entity';
+import { CACHE_KEYS, CACHE_TTL } from '../config/cache.config';
+
+type BuyResult = {
+  success: true;
+  finalPrice: number;
+  playerId: string;
+  buyerTeamId: string;
+  sellerTeamId: string;
+};
 
 @Injectable()
 export class TransfersService {
+  private readonly logger = new Logger(TransfersService.name);
+
   constructor(
     @InjectRepository(TransferListing)
     private readonly listingsRepo: Repository<TransferListing>,
@@ -20,7 +41,10 @@ export class TransfersService {
     @InjectRepository(Player)
     private readonly playersRepo: Repository<Player>,
 
-    private readonly dataSource: DataSource, // for transactions
+    private readonly dataSource: DataSource,
+
+    @Inject(CACHE_MANAGER)
+    private readonly cacheManager: Cache,
   ) {}
 
   /**
@@ -36,6 +60,29 @@ export class TransfersService {
     limit?: number;
     offset?: number;
   }) {
+    // Generate cache key from filters
+    const cacheKey = CACHE_KEYS.TRANSFERS_LIST(JSON.stringify(filters || {}));
+
+    // Define response type for consistency
+    type PaginatedListingsResponse = {
+      data: TransferListing[];
+      pagination: {
+        limit: number;
+        offset: number;
+        total: number;
+        hasMore: boolean;
+      };
+      filters: typeof filters;
+    };
+
+    // Try to get from cache
+    const cached =
+      await this.cacheManager.get<PaginatedListingsResponse>(cacheKey);
+    if (cached) {
+      this.logger.debug(`Cache hit for transfers list: ${cacheKey}`);
+      return cached;
+    }
+
     const qb = this.listingsRepo
       .createQueryBuilder('listing')
       .leftJoinAndSelect('listing.player', 'player')
@@ -67,10 +114,36 @@ export class TransfersService {
 
     qb.orderBy('listing.createdAt', 'DESC');
 
-    if (filters?.limit) qb.limit(filters.limit);
-    if (filters?.offset) qb.offset(filters.offset);
+    const take = Math.min(
+      Math.max(
+        filters?.limit ?? PAGINATION_CONSTRAINTS.DEFAULT_LIMIT,
+        PAGINATION_CONSTRAINTS.MIN_LIMIT,
+      ),
+      PAGINATION_CONSTRAINTS.MAX_LIMIT,
+    );
+    const skip = Math.max(filters?.offset ?? 0, 0);
+    qb.take(take).skip(skip);
 
-    return qb.getMany();
+    const results = await qb.getMany();
+    const total = await qb.getCount();
+
+    const response: PaginatedListingsResponse = {
+      data: results,
+      pagination: {
+        limit: take,
+        offset: skip,
+        total,
+        hasMore: skip + results.length < total,
+      },
+      filters,
+    };
+
+    // Store in cache
+    await this.cacheManager.set(cacheKey, response, CACHE_TTL.TRANSFERS_LIST);
+    await this.trackTransfersCacheKey(cacheKey);
+    this.logger.debug(`Cached transfers list: ${cacheKey}`);
+
+    return response;
   }
 
   /**
@@ -116,21 +189,18 @@ export class TransfersService {
     });
     if (existing) throw new BadRequestException('Player already listed');
 
-    // ensure team has minimum 15 players
-    const totalTeamPlayers = await this.playersRepo.count({
-      where: { team: { id: player.team.id } },
-    });
-
-    if (totalTeamPlayers <= 15) {
-      throw new BadRequestException('Team can have minimum 15 players');
-    }
-
     const listing = this.listingsRepo.create({
       player,
       askingPrice: dto.askingPrice,
     });
 
-    return this.listingsRepo.save(listing);
+    const savedListing = await this.listingsRepo.save(listing);
+
+    // Invalidate all transfers list caches
+    await this.invalidateTransfersCache();
+    this.logger.log(`Created listing ${savedListing.id}, invalidated cache`);
+
+    return savedListing;
   }
 
   /**
@@ -150,6 +220,8 @@ export class TransfersService {
     if (ownerId !== userId) throw new ForbiddenException('Not allowed');
 
     await this.listingsRepo.delete(listingId);
+    await this.invalidateTransfersCache();
+    this.logger.log(`Removed listing ${listingId}, invalidated cache`);
     return { success: true };
   }
 
@@ -159,121 +231,164 @@ export class TransfersService {
    * @param buyerUserId The ID of the user attempting to buy the player.
    * @returns An object containing the purchased player and the updated buyer's balance.
    */
-  async buy(listingId: string, buyerUserId: string) {
-    // Use a transaction to ensure atomicity
-    return this.dataSource.transaction(async (manager) => {
-      // re-load listing with row-level locks by using manager and locking the relevant rows
-      const listing = await manager.getRepository(TransferListing).findOne({
-        where: { id: listingId },
-        relations: ['player', 'player.team', 'player.team.user'],
-      });
-      if (!listing) throw new NotFoundException('Listing not found');
+  async buy(listingId: string, buyerUserId: string): Promise<BuyResult> {
+    this.logger.log(
+      `Transfer initiated for listing=${listingId}, buyer=${buyerUserId}`,
+    );
+    let result: BuyResult;
+    try {
+      // Use a transaction to ensure atomicity
+      result = await this.dataSource.transaction(
+        async (manager): Promise<BuyResult> => {
+          // re-load listing with row-level locks by using manager and locking the relevant rows
+          const listing = await manager
+            .getRepository(TransferListing)
+            .createQueryBuilder('listing')
+            .setLock('pessimistic_write')
+            .leftJoinAndSelect('listing.player', 'player')
+            .leftJoinAndSelect('player.team', 'team')
+            .leftJoinAndSelect('team.user', 'user')
+            .where('listing.id = :id', { id: listingId })
+            .getOne();
 
-      const player = listing.player;
-      const sellerTeam = player.team;
-      const sellerUser = sellerTeam?.user;
+          if (!listing) throw new NotFoundException('Listing not found');
 
-      if (!sellerTeam || !sellerUser) {
-        throw new BadRequestException('Player does not belong to a valid team');
-      }
+          const player = listing.player;
+          const sellerTeam = player.team;
+          const sellerUser = sellerTeam?.user;
 
-      if (sellerUser.id === buyerUserId) {
-        throw new BadRequestException('Cannot buy your own player');
-      }
+          if (!sellerTeam || !sellerUser) {
+            throw new BadRequestException(
+              'Player does not belong to a valid team',
+            );
+          }
 
-      // Lock buyer team and seller team and player rows to avoid race conditions
-      // Fetch buyerTeam, sellerTeam with FOR UPDATE via query builder (manager)
-      const buyerTeam = await manager
-        .getRepository(Team)
-        .createQueryBuilder('team')
-        .setLock('pessimistic_write')
-        .leftJoinAndSelect('team.user', 'user')
-        .where('user.id = :userId', { userId: buyerUserId })
-        .getOne();
+          if (sellerUser.id === buyerUserId) {
+            throw new BadRequestException('Cannot buy your own player');
+          }
 
-      if (!buyerTeam) throw new BadRequestException('Buyer has no team');
+          // Lock buyer team and seller team and player rows to avoid race conditions
+          // Fetch buyerTeam, sellerTeam with FOR UPDATE via query builder (manager)
+          const buyerTeamLocked = await manager
+            .getRepository(Team)
+            .createQueryBuilder('team')
+            .setLock('pessimistic_write')
+            .leftJoinAndSelect('team.user', 'user')
+            .where('user.id = :userId', { userId: buyerUserId })
+            .getOne();
 
-      // Re-fetch seller team with lock
-      const sellerTeamLocked = await manager
-        .getRepository(Team)
-        .createQueryBuilder('team')
-        .setLock('pessimistic_write')
-        .where('team.id = :id', { id: sellerTeam.id })
-        .getOne();
+          if (!buyerTeamLocked)
+            throw new BadRequestException('Buyer has no team');
 
-      // Count players in each team
-      const sellerPlayersCount = await manager.getRepository(Player).count({
-        where: { team: { id: sellerTeam.id } },
-      });
+          // Re-fetch seller team with lock
+          const sellerTeamLocked = await manager
+            .getRepository(Team)
+            .createQueryBuilder('team')
+            .setLock('pessimistic_write')
+            .where('team.id = :id', { id: sellerTeam.id })
+            .getOne();
 
-      const buyerPlayersCount = await manager.getRepository(Player).count({
-        where: { team: { id: buyerTeam.id } },
-      });
+          if (!sellerTeamLocked)
+            throw new BadRequestException('Seller has no team');
 
-      // Enforce team size constraints
-      const MIN_PLAYERS = 15;
-      const MAX_PLAYERS = 25;
+          // Count players in each team
+          const sellerPlayersCount = await manager.getRepository(Player).count({
+            where: { team: { id: sellerTeamLocked.id } },
+          });
 
-      if (sellerPlayersCount - 1 < MIN_PLAYERS) {
-        throw new BadRequestException(
-          'Seller team would fall below minimum players (15)',
-        );
-      }
+          const buyerPlayersCount = await manager.getRepository(Player).count({
+            where: { team: { id: buyerTeamLocked.id } },
+          });
 
-      if (buyerPlayersCount + 1 > MAX_PLAYERS) {
-        throw new BadRequestException(
-          'Buyer team would exceed maximum players (25)',
-        );
-      }
+          if (sellerPlayersCount - 1 < TEAM_CONSTRAINTS.MIN_PLAYERS) {
+            throw new BadRequestException(
+              'Seller team would fall below minimum players (15)',
+            );
+          }
 
-      // Calculate final price (95% rule)
-      const finalPrice = Math.floor(listing.askingPrice * 0.95);
+          if (buyerPlayersCount + 1 > TEAM_CONSTRAINTS.MAX_PLAYERS) {
+            throw new BadRequestException(
+              'Buyer team would exceed maximum players (25)',
+            );
+          }
 
-      // Load teams with budgets
-      const sellerTeamWithBudget = await manager
-        .getRepository(Team)
-        .createQueryBuilder('team')
-        .setLock('pessimistic_write')
-        .where('team.id = :id', { id: sellerTeam.id })
-        .getOne();
+          // Calculate final price (95% rule)
+          const finalPrice = Math.floor(
+            listing.askingPrice *
+              (TRANSFER_RULES.SELLER_RECEIVES_PERCENT / 100),
+          );
 
-      const buyerTeamWithBudget = await manager
-        .getRepository(Team)
-        .createQueryBuilder('team')
-        .setLock('pessimistic_write')
-        .where('team.id = :id', { id: buyerTeam.id })
-        .getOne();
+          if (buyerTeamLocked.budget < finalPrice) {
+            throw new BadRequestException('Buyer team has insufficient budget');
+          }
 
-      if (!buyerTeamWithBudget || !sellerTeamWithBudget) {
-        throw new BadRequestException('Teams not found');
-      }
+          // Debit buyer, credit seller
+          buyerTeamLocked.budget = buyerTeamLocked.budget - finalPrice;
+          sellerTeamLocked.budget = sellerTeamLocked.budget + finalPrice;
 
-      if (buyerTeamWithBudget.budget < finalPrice) {
-        throw new BadRequestException('Buyer team has insufficient budget');
-      }
+          // Move player to buyer team
+          player.team = buyerTeamLocked;
 
-      // Debit buyer, credit seller
-      buyerTeamWithBudget.budget = buyerTeamWithBudget.budget - finalPrice;
-      sellerTeamWithBudget.budget = sellerTeamWithBudget.budget + finalPrice;
+          // Persist changes via manager
+          await manager.getRepository(Player).save(player);
+          await manager.getRepository(Team).save(buyerTeamLocked);
+          await manager.getRepository(Team).save(sellerTeamLocked);
 
-      // Move player to buyer team
-      player.team = buyerTeamWithBudget;
+          // Remove listing
+          await manager.getRepository(TransferListing).delete(listingId);
 
-      // Persist changes via manager
-      await manager.getRepository(Player).save(player);
-      await manager.getRepository(Team).save(buyerTeamWithBudget);
-      await manager.getRepository(Team).save(sellerTeamWithBudget);
+          await manager.getRepository(TransferHistory).save({
+            player,
+            fromTeam: sellerTeamLocked,
+            toTeam: buyerTeamLocked,
+            price: finalPrice,
+          });
 
-      // Remove listing
-      await manager.getRepository(TransferListing).delete(listingId);
+          const res: BuyResult = {
+            success: true,
+            finalPrice,
+            playerId: player.id,
+            buyerTeamId: buyerTeamLocked.id,
+            sellerTeamId: sellerTeamLocked.id,
+          };
+          return res;
+        },
+      );
+      // Invalidate transfers cache after successful buy
+      await this.invalidateTransfersCache();
+      this.logger.log(
+        `Transfer completed successfully: ${JSON.stringify(result)}`,
+      );
+      return result;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.error(
+        `Transfer failed for listing=${listingId}, buyer=${buyerUserId}: ${message}`,
+      );
+      throw err;
+    }
+  }
 
-      return {
-        success: true,
-        finalPrice,
-        playerId: player.id,
-        buyerTeamId: buyerTeamWithBudget.id,
-        sellerTeamId: sellerTeamWithBudget.id,
-      };
-    });
+  /**
+   * Invalidates all transfer listing caches.
+   * Called after mutations (create, buy, remove).
+   */
+  private async invalidateTransfersCache() {
+    const indexKey = 'transfers:index';
+    const keys = (await this.cacheManager.get<string[]>(indexKey)) || [];
+    if (keys.length) {
+      await this.cacheManager.mdel(keys);
+    }
+    await this.cacheManager.set(indexKey, [], CACHE_TTL.TRANSFERS_LIST);
+    this.logger.debug(`Invalidated ${keys.length} transfer cache keys`);
+  }
+
+  private async trackTransfersCacheKey(key: string) {
+    const indexKey = 'transfers:index';
+    const existing = (await this.cacheManager.get<string[]>(indexKey)) || [];
+    if (!existing.includes(key)) {
+      existing.push(key);
+      await this.cacheManager.set(indexKey, existing, CACHE_TTL.TRANSFERS_LIST);
+    }
   }
 }

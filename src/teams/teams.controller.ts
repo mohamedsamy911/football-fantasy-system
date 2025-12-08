@@ -1,9 +1,9 @@
-import { Controller, Get, Param } from '@nestjs/common';
+import { Controller, Get, Param, ParseUUIDPipe } from '@nestjs/common';
 import { TeamsService } from './teams.service';
 import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 
 @ApiTags('Teams')
-@Controller('teams')
+@Controller({ path: 'teams', version: '1' })
 export class TeamsController {
   constructor(private readonly teamsService: TeamsService) {}
 
@@ -16,7 +16,7 @@ export class TeamsController {
     description: 'The ID of the team to retrieve players from.',
     type: String,
   })
-  async getPlayers(@Param('id') id: string) {
+  async getPlayers(@Param('id', ParseUUIDPipe) id: string) {
     return this.teamsService.getPlayers(id);
   }
 }

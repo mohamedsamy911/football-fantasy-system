@@ -1,0 +1,17 @@
+export const TEAM_CONSTRAINTS = {
+  MIN_PLAYERS: 15,
+  MAX_PLAYERS: 25,
+  INITIAL_BUDGET: 5000000,
+} as const;
+
+export const TRANSFER_RULES = {
+  MARKET_FEE_PERCENT: 5,
+  SELLER_RECEIVES_PERCENT: 95,
+} as const;
+
+export const PAGINATION_CONSTRAINTS = {
+  DEFAULT_LIMIT: 50,
+  MIN_LIMIT: 1,
+  MAX_LIMIT: 100,
+  DEFAULT_OFFSET: 0,
+} as const;

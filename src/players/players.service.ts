@@ -37,13 +37,17 @@ export class PlayersService {
   /**
    * Updates a player's information.
    * @param id The ID of the player to update.
+   * @param userId The ID of the user who is updating the player.
    * @param dto The data transfer object containing the updated player details.
    * @returns The updated player entity.
    */
-  async update(id: string, dto: UpdatePlayerDto) {
+  async update(id: string, userId: string, dto: UpdatePlayerDto) {
     const player = await this.findById(id);
 
     if (!player) throw new NotFoundException('Player not found');
+
+    if (!(await this.findOwnedPlayer(id, userId)))
+      throw new NotFoundException('You do not own this player');
 
     Object.assign(player, dto);
     return this.playersRepo.save(player);
@@ -52,10 +56,16 @@ export class PlayersService {
   /**
    * Deletes a player by its ID.
    * @param id The ID of the player to delete.
+   * @param userId The ID of the user who is deleting the player.
    * @returns The result of the delete operation.
    */
-  async delete(id: string) {
-    return this.playersRepo.delete(id);
+  async delete(id: string, userId: string) {
+    if (!(await this.findOwnedPlayer(id, userId)))
+      throw new NotFoundException('You do not own this player');
+
+    await this.playersRepo.delete(id);
+
+    return { success: true };
   }
 
   /**

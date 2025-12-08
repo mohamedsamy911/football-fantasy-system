@@ -1,9 +1,9 @@
-import { Controller, Get, Param } from '@nestjs/common';
+import { Controller, Get, Param, ParseUUIDPipe } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 
 @ApiTags('Users')
-@Controller('users')
+@Controller({ path: 'users', version: '1' })
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
@@ -16,7 +16,7 @@ export class UsersController {
     description: 'The ID of the user to retrieve.',
     type: String,
   })
-  async getUser(@Param('id') id: string) {
+  async getUser(@Param('id', ParseUUIDPipe) id: string) {
     return this.usersService.findById(id);
   }
 }

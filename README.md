@@ -1,271 +1,312 @@
 # ⚽ Football Fantasy System
 
-![NestJS](https://img.shields.io/badge/NestJS-E0234E?style=for-the-badge&logo=nestjs&logoColor=white)
-![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169E1?style=for-the-badge&logo=postgresql&logoColor=white)
-![Redis](https://img.shields.io/badge/Redis-DC382D?style=for-the-badge&logo=redis&logoColor=white)
-![Docker](https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white)
+[![NestJS](https://img.shields.io/badge/NestJS-E0234E?style=for-the-badge&logo=nestjs&logoColor=white)](https://nestjs.com/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169E1?style=for-the-badge&logo=postgresql&logoColor=white)](https://www.postgresql.org/)
+[![Redis](https://img.shields.io/badge/Redis-DC382D?style=for-the-badge&logo=redis&logoColor=white)](https://redis.io/)
+[![Docker](https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white)](https://www.docker.com/)
 
-A robust backend system for fantasy football applications, built with modern technologies for high performance and scalability.
+A production-ready backend system for fantasy football applications, built with **NestJS** for high performance, security, and scalability.
 
-## 🚀 Features
+---
 
-- **Transfer Marketplace** - Buy, sell, and list players with authentication
-- **User Authentication** - Secure identification system
-- **API Documentation** - Interactive Swagger UI
-- **Containerized Deployment** - Easy setup with Docker
+## ✨ Features
+
+| Feature                     | Description                                                    |
+| --------------------------- | -------------------------------------------------------------- |
+| 🔐 **JWT Authentication**   | Secure token-based authentication with bcrypt password hashing |
+| 💰 **Transfer Marketplace** | Buy, sell, and list players with atomic transactions           |
+| ⚡ **Redis Caching**        | High-performance caching layer for optimized queries           |
+| 📊 **API Versioning**       | All endpoints versioned (`/v1/...`) for backward compatibility |
+| 📖 **Swagger Docs**         | Interactive API documentation with OpenAPI specification       |
+| 🐳 **Docker Ready**         | One-command deployment with Docker Compose                     |
+| 🛡️ **Input Validation**     | Comprehensive DTO validation with class-validator              |
+| 🔄 **Database Migrations**  | Production-safe schema management with TypeORM                 |
+
+---
 
 ## 🏗️ Architecture
 
 ```
-Football Fantasy System
-├── API Layer (NestJS Controllers)
-├── Business Logic (Services)
-├── Data Access (Repositories)
-├── PostgreSQL (Primary Database)
-└── Redis (Cache Layer)
+            ┌─────────────────────────────────────────────────────────────┐
+            │                    Client Applications                      │
+            └──────────────────────────┬──────────────────────────────────┘
+                                       │ HTTPS
+            ┌──────────────────────────▼──────────────────────────────────┐
+            │                    API Gateway (v1)                         │
+            │  ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────────────┐ │
+            │  │  Auth   │  │ Players │  │  Teams  │  │   Transfers     │ │
+            │  └────┬────┘  └────┬────┘  └────┬────┘  └────────┬────────┘ │
+            └───────┼────────────┼────────────┼────────────────┼──────────┘
+                    │            │            │                │
+            ┌───────▼────────────▼────────────▼────────────────▼──────────┐
+            │                    Service Layer                            │
+            │           (Business Logic + Validation)                     │
+            └───────┬────────────┬────────────────────────────┬───────────┘
+                    │            │                            │
+            ┌───────▼────┐  ┌────▼─────┐               ┌──────▼──────┐
+            │ PostgreSQL │  │  Redis   │               │   BullMQ    │
+            │ (Primary)  │  │ (Cache)  │               │   (Jobs)    │
+            └────────────┘  └──────────┘               └─────────────┘
 ```
+
+---
 
 ## 📋 Prerequisites
 
-- **Node.js** 18+ (for local development)
-- **Docker & Docker Compose** (for containerized deployment)
-- **npm** or **yarn** package manager
+- **Node.js** 18+
+- **Docker & Docker Compose** (recommended)
+- **npm** or **yarn**
 
-## 🛠️ Installation & Setup
+---
 
-### Quick Start with Docker (Recommended)
+## 🚀 Quick Start
+
+### Option 1: Docker (Recommended)
 
 ```bash
-# Clone the repository
+# Clone and start
 git clone https://github.com/mohamedsamy911/football-fantasy-system.git
 cd football-fantasy-system
-
-# Build and start all services
 docker-compose up --build
 ```
 
-The application will be available at: **http://localhost:3000**
+🎉 Application available at: **http://localhost:3000**
 
-### Manual Local Setup
+### Option 2: Local Development
 
-1. **Clone and install dependencies:**
-   ```bash
-   git clone https://github.com/mohamedsamy911/football-fantasy-system.git
-   cd football-fantasy-system
-   npm install
-   ```
+```bash
+# 1. Install dependencies
+npm install
 
-2. **Start required services:**
-   ```bash
-   # Start Redis (port 6379)
-   redis-server
+# 2. Configure environment
+cp .env.example .env
+# Edit .env with your settings
 
-   # Start PostgreSQL (port 5432)
-   # Ensure PostgreSQL is running with the correct credentials
-   ```
+# 3. Start Redis & PostgreSQL (via Docker or locally)
+docker-compose up -d postgres redis
 
-3. **Configure environment variables:**
-   Create a `.env` file based on `.env.example`:
-   ```bash
-   cp .env.example .env
-   ```
-
-4. **Run the application:**
-   ```bash
-   npm run start:dev
-   ```
-
-## 🔧 Environment Configuration
-
-Create a `.env` file in the root directory:
-
-```env
-# Database Configuration
-DB_HOST=localhost          # Use 'postgres' in Docker environment
-DB_PORT=5432
-DB_USER=postgres
-DB_PASSWORD=postgres
-DB_NAME=football_manager
-
-# Redis Configuration
-REDIS_HOST=localhost       # Use 'redis' in Docker environment
-REDIS_PORT=6379
-
-# Application
-PORT=3000
-NODE_ENV=development
+# 4. Run development server
+npm run start:dev
 ```
+
+---
+
+## 🔧 Environment Variables
+
+| Variable      | Description                    | Default            |
+| ------------- | ------------------------------ | ------------------ |
+| `DB_HOST`     | PostgreSQL host                | `localhost`        |
+| `DB_PORT`     | PostgreSQL port                | `5432`             |
+| `DB_USER`     | Database user                  | `postgres`         |
+| `DB_PASSWORD` | Database password              | `postgres`         |
+| `DB_NAME`     | Database name                  | `football_manager` |
+| `REDIS_HOST`  | Redis host                     | `localhost`        |
+| `REDIS_PORT`  | Redis port                     | `6379`             |
+| `JWT_SECRET`  | **Required** - JWT signing key | -                  |
+| `PORT`        | Application port               | `3000`             |
+| `NODE_ENV`    | Environment mode               | `development`      |
+
+> ⚠️ **Important:** `JWT_SECRET` must be set in production!
+
+---
 
 ## 📖 API Documentation
 
-### Interactive API Explorer
+### Base URL
 
-Once the application is running, access the Swagger UI at:
+```
+http://localhost:3000/v1
+```
 
-**http://localhost:3000/api-docs**
+### Interactive Docs
 
-### API Endpoints Overview
+Swagger UI available at: **http://localhost:3000/api-docs**
 
-#### 🔐 Authentication
-| Method | Endpoint | Description | Auth Required |
-|--------|----------|-------------|---------------|
-| POST | `/auth/identify` | Register or login user | No |
+---
 
-#### 👥 Players
-| Method | Endpoint | Description | Auth Required |
-|--------|----------|-------------|---------------|
-| GET | `/players/:id` | Get player details | No |
-| GET | `/players/team/:teamId` | Get players by team | No |
-| PATCH | `/players/:id` | Update player details | No |
-| DELETE | `/players/:id` | Delete a player | No |
+### 🔐 Authentication
 
-#### 🏟️ Teams
-| Method | Endpoint | Description | Auth Required |
-|--------|----------|-------------|---------------|
-| GET | `/teams/:id/players` | Get team players | No |
+All protected endpoints require a Bearer token in the `Authorization` header:
 
-#### 💰 Transfer Market
-| Method | Endpoint | Description | Auth Required |
-|--------|----------|-------------|---------------|
-| GET | `/transfers` | List transfer listings | No |
-| POST | `/transfers` | Create new listing | Yes |
-| DELETE | `/transfers/:id` | Remove listing | Yes |
-| POST | `/transfers/buy` | Buy player from listing | Yes |
+```
+Authorization: Bearer <your-jwt-token>
+```
 
-#### 👤 Users
-| Method | Endpoint | Description | Auth Required |
-|--------|----------|-------------|---------------|
-| GET | `/users/:id` | Get user details | No |
+| Method | Endpoint            | Description            | Auth |
+| ------ | ------------------- | ---------------------- | ---- |
+| `POST` | `/v1/auth/identify` | Register or login user | ❌   |
 
-## 🐳 Docker Services
+**Request:**
 
-The `docker-compose.yml` includes:
+```json
+{
+  "email": "user@example.com",
+  "password": "securepassword"
+}
+```
 
-- **Application** - NestJS application on port 3000
-- **PostgreSQL** - Primary database on port 5432
-- **Redis** - Cache layer on port 6379
+**Response:**
 
-### Docker Commands
+```json
+{
+  "message": "User registered successfully. Team creation in progress.",
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+}
+```
+
+---
+
+### 👥 Players
+
+| Method   | Endpoint                   | Description           | Auth  |
+| -------- | -------------------------- | --------------------- | ----- |
+| `GET`    | `/v1/players/:id`          | Get player details    | ❌    |
+| `GET`    | `/v1/players/team/:teamId` | Get players by team   | ❌    |
+| `PATCH`  | `/v1/players/:id`          | Update player details | ✅ 🔒 |
+| `DELETE` | `/v1/players/:id`          | Delete a player       | ✅ 🔒 |
+
+> 🔒 **Ownership Required:** Users can only modify their own players.
+
+---
+
+### 🏟️ Teams
+
+| Method | Endpoint                | Description      | Auth |
+| ------ | ----------------------- | ---------------- | ---- |
+| `GET`  | `/v1/teams/:id/players` | Get team players | ❌   |
+
+---
+
+### 💰 Transfer Market
+
+| Method   | Endpoint            | Description             | Auth  |
+| -------- | ------------------- | ----------------------- | ----- |
+| `GET`    | `/v1/transfers`     | List transfer listings  | ❌    |
+| `POST`   | `/v1/transfers`     | Create new listing      | ✅ 🔒 |
+| `DELETE` | `/v1/transfers/:id` | Remove listing          | ✅ 🔒 |
+| `POST`   | `/v1/transfers/buy` | Buy player from listing | ✅    |
+
+**Query Parameters for `GET /v1/transfers`:**
+
+| Parameter    | Type   | Description                              |
+| ------------ | ------ | ---------------------------------------- |
+| `playerName` | string | Filter by player name (partial match)    |
+| `teamId`     | UUID   | Filter by team ID                        |
+| `minPrice`   | number | Minimum price filter                     |
+| `maxPrice`   | number | Maximum price filter                     |
+| `limit`      | number | Results per page (default: 50, max: 100) |
+| `offset`     | number | Pagination offset                        |
+
+---
+
+### 👤 Users
+
+| Method | Endpoint        | Description      | Auth |
+| ------ | --------------- | ---------------- | ---- |
+| `GET`  | `/v1/users/:id` | Get user details | ❌   |
+
+---
+
+## 🐳 Docker
+
+### Services
+
+| Service    | Port | Description         |
+| ---------- | ---- | ------------------- |
+| `app`      | 3000 | NestJS application  |
+| `postgres` | 5432 | PostgreSQL database |
+| `redis`    | 6379 | Redis cache         |
+
+### Commands
 
 ```bash
-# Start services in background
-docker-compose up -d
-
-# View logs
-docker-compose logs -f
-
-# Stop services
-docker-compose down
-
-# Stop and remove volumes
-docker-compose down -v
+docker-compose up -d          # Start in background
+docker-compose logs -f app    # View app logs
+docker-compose down           # Stop services
+docker-compose down -v        # Stop and remove volumes
 ```
+
+---
 
 ## 📁 Project Structure
 
 ```
-└── 📁src
-    └── 📁auth
-        └── 📁dto
-            ├── identify.dto.ts
-        └── 📁strategies
-            ├── jwt.strategy.ts
-            ├── local.strategy.ts
-        ├── auth.controller.spec.ts
-        ├── auth.controller.ts
-        ├── auth.module.ts
-        ├── auth.service.spec.ts
-        ├── auth.service.ts
-        ├── jwt-auth.guard.ts
-    └── 📁common
-        └── 📁enums
-            ├── player-position.enum.ts
-    └── 📁players
-        └── 📁dto
-            ├── update-player.dto.ts
-        └── 📁entities
-            ├── player.entity.ts
-        ├── players.controller.spec.ts
-        ├── players.controller.ts
-        ├── players.module.ts
-        ├── players.service.spec.ts
-        ├── players.service.ts
-    └── 📁teams
-        └── 📁entities
-            ├── team.entity.ts
-        └── 📁jobs
-            ├── team-creation.processor.ts
-        ├── teams.controller.spec.ts
-        ├── teams.controller.ts
-        ├── teams.module.ts
-        ├── teams.service.spec.ts
-        ├── teams.service.ts
-    └── 📁transfers
-        └── 📁dto
-            ├── buy.dto.ts
-            ├── create-listing.dto.ts
-        └── 📁entities
-            ├── transfer-listing.entity.ts
-        ├── transfers.controller.spec.ts
-        ├── transfers.controller.ts
-        ├── transfers.module.ts
-        ├── transfers.service.spec.ts
-        ├── transfers.service.ts
-    └── 📁users
-        └── 📁dto
-            ├── create-user.dto.ts
-        └── 📁entities
-            ├── user.entity.ts
-        ├── users.controller.spec.ts
-        ├── users.controller.ts
-        ├── users.module.ts
-        ├── users.service.spec.ts
-        ├── users.service.ts
-    ├── app.controller.spec.ts
-    ├── app.controller.ts
-    ├── app.module.ts
-    ├── app.service.ts
-    └── main.ts
+src/
+├── auth/                 # Authentication (JWT, strategies)
+├── common/               # Shared decorators, enums, guards
+├── config/               # Configuration (cache, constants)
+├── migrations/           # Database migrations
+├── players/              # Player management
+├── teams/                # Team management + job processors
+├── transfers/            # Transfer marketplace
+├── users/                # User management
+├── app.module.ts         # Root module
+├── data-source.ts        # TypeORM migration config
+└── main.ts               # Application entry point
 ```
+
+---
 
 ## 🧪 Development
 
-### Available Scripts
+### Scripts
+
+| Command              | Description                 |
+| -------------------- | --------------------------- |
+| `npm run start:dev`  | Development with hot reload |
+| `npm run build`      | Production build            |
+| `npm run start:prod` | Production start            |
+| `npm test`           | Run unit tests              |
+| `npm run test:cov`   | Test with coverage          |
+| `npm run lint`       | Lint code                   |
+| `npm run format`     | Format code                 |
+
+### Database Migrations
 
 ```bash
-# Development mode with hot reload
-npm run start:dev
-
-# Production build
-npm run build
-
-# Production start
-npm run start:prod
-
-# Run tests
-npm test
-
-# Run tests with coverage
-npm run test:cov
-
-# Lint code
-npm run lint
-
-# Format code
-npm run format
+npm run migration:generate   # Generate from entity changes
+npm run migration:run        # Apply pending migrations
+npm run migration:revert     # Rollback last migration
+npm run migration:show       # Show migration status
 ```
+
+> **Note:** Development uses `synchronize: true`. Production must use migrations.
+
+---
+
+## 🔒 Security Features
+
+- ✅ **JWT Authentication** with configurable expiration
+- ✅ **Password Hashing** with bcrypt (10 rounds)
+- ✅ **Ownership Validation** on player/listing mutations
+- ✅ **UUID Validation** on all path parameters
+- ✅ **Input Sanitization** via class-validator
+- ✅ **Password Exclusion** from API responses
+
+---
 
 ## 📄 License
 
 This project is licensed under the [MIT License](LICENSE).
 
-## 🔗 Links
+---
+
+## 🔗 Resources
 
 - [NestJS Documentation](https://docs.nestjs.com/)
-- [PostgreSQL Documentation](https://www.postgresql.org/docs/)
-- [Redis Documentation](https://redis.io/documentation)
+- [TypeORM Documentation](https://typeorm.io/)
+- [Swagger/OpenAPI](https://swagger.io/)
 - [Docker Documentation](https://docs.docker.com/)
+
+---
 
 ## 🆘 Support
 
-For issues and questions, please open an issue in the GitHub repository.
+For issues and questions, please [open an issue](https://github.com/mohamedsamy911/football-fantasy-system/issues) on GitHub.
+
+---
+
+<p align="center">
+  Made with ❤️ using <a href="https://nestjs.com/">NestJS</a>
+</p>

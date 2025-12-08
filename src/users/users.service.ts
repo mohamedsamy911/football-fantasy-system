@@ -25,6 +25,7 @@ export class UsersService {
     return this.usersRepo.findOne({
       where: { email },
       relations: ['team'],
+      select: ['id', 'email', 'password'],
     });
   }
 
