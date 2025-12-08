@@ -59,12 +59,22 @@ describe('TeamsService', () => {
   describe('generatePlayers', () => {
     it('should generate 20 players with correct distribution', async () => {
       const teamId = 'team-1';
-      const createdPlayers: any[] = [];
+      const createdPlayers: Array<{
+        position: PlayerPosition;
+        team: { id: string };
+        name: string;
+      }> = [];
 
-      mockPlayersRepo.create.mockImplementation((data) => {
-        createdPlayers.push(data);
-        return data;
-      });
+      mockPlayersRepo.create.mockImplementation(
+        (data: {
+          position: PlayerPosition;
+          team: { id: string };
+          name: string;
+        }) => {
+          createdPlayers.push(data);
+          return data;
+        },
+      );
       mockPlayersRepo.save.mockResolvedValue(createdPlayers);
 
       await service.generatePlayers(teamId);
@@ -83,12 +93,22 @@ describe('TeamsService', () => {
 
     it('should assign team id to all players', async () => {
       const teamId = 'team-1';
-      const createdPlayers: any[] = [];
+      const createdPlayers: Array<{
+        position: PlayerPosition;
+        team: { id: string };
+        name: string;
+      }> = [];
 
-      mockPlayersRepo.create.mockImplementation((data) => {
-        createdPlayers.push(data);
-        return data;
-      });
+      mockPlayersRepo.create.mockImplementation(
+        (data: {
+          position: PlayerPosition;
+          team: { id: string };
+          name: string;
+        }) => {
+          createdPlayers.push(data);
+          return data;
+        },
+      );
       mockPlayersRepo.save.mockResolvedValue(createdPlayers);
 
       await service.generatePlayers(teamId);

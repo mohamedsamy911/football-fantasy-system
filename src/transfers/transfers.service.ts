@@ -245,9 +245,9 @@ export class TransfersService {
             .getRepository(TransferListing)
             .createQueryBuilder('listing')
             .setLock('pessimistic_write')
-            .leftJoinAndSelect('listing.player', 'player')
-            .leftJoinAndSelect('player.team', 'team')
-            .leftJoinAndSelect('team.user', 'user')
+            .innerJoinAndSelect('listing.player', 'player')
+            .innerJoinAndSelect('player.team', 'team')
+            .innerJoinAndSelect('team.user', 'user')
             .where('listing.id = :id', { id: listingId })
             .getOne();
 

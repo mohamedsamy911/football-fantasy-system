@@ -45,7 +45,7 @@ export class TransfersController {
     type: PaginatedTransferListingsResponseDto,
   })
   async list(@Query() query: ListTransfersQueryDto) {
-    return this.transfers.findAll(query);
+    return await this.transfers.findAll(query);
   }
 
   // Create listing (must be authenticated)
@@ -64,7 +64,7 @@ export class TransfersController {
     description: 'Data required to list a player for sale.',
   })
   async create(@Body() dto: CreateListingDto, @CurrentUser() userId: string) {
-    return this.transfers.createListing(dto, userId);
+    return await this.transfers.createListing(dto, userId);
   }
 
   // Remove listing (owner only)
@@ -86,7 +86,7 @@ export class TransfersController {
     @Param('id', new ParseUUIDPipe()) id: string,
     @CurrentUser() userId: string,
   ) {
-    return this.transfers.removeListing(id, userId);
+    return await this.transfers.removeListing(id, userId);
   }
 
   // Buy
@@ -103,6 +103,6 @@ export class TransfersController {
   @ApiResponse({ status: 404, description: 'Listing not found.' })
   @ApiBody({ type: BuyDto, description: 'Listing ID of the player to buy.' })
   async buy(@Body() dto: BuyDto, @CurrentUser() userId: string) {
-    return this.transfers.buy(dto.listingId, userId);
+    return await this.transfers.buy(dto.listingId, userId);
   }
 }

@@ -1,21 +1,24 @@
 import { Injectable } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { Strategy } from 'passport-jwt';
+import { ConfigService } from '@nestjs/config';
 import type { Request } from 'express';
 
 /**
  * JWT strategy for authentication.
- * @extends PassportStrategy
  */
 type JwtConstructor = new (opts: {
   jwtFromRequest: (req: Request) => string | null;
   secretOrKey: string;
+  ignoreExpiration?: boolean;
 }) => any;
 const JwtBase = PassportStrategy(Strategy) as unknown as JwtConstructor;
 
 @Injectable()
 export class JwtStrategy extends JwtBase {
-  constructor() {
+  constructor(private readonly configService: ConfigService) {
+    const secret = configService.get<string>('JWT_SECRET') || 'dev_secret';
+
     const jwtFromRequest = (req: Request): string | null => {
       const header = req.headers?.authorization;
       if (!header) return null;
@@ -24,14 +27,16 @@ export class JwtStrategy extends JwtBase {
     };
     super({
       jwtFromRequest,
-      secretOrKey: (() => {
-        const secret = process.env.JWT_SECRET;
-        if (!secret) {
-          throw new Error('JWT_SECRET environment variable is required');
-        }
-        return secret;
-      })(),
+      ignoreExpiration: false,
+      secretOrKey: secret,
     });
+
+    // Warn if using fallback secret
+    if (!configService.get<string>('JWT_SECRET')) {
+      console.warn(
+        'JWT_SECRET not set. Using insecure default. Set JWT_SECRET in production!',
+      );
+    }
   }
 
   /**
