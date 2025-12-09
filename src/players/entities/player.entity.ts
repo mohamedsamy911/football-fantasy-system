@@ -28,7 +28,7 @@ export class Player {
   @Column()
   name: string;
 
-  @Column({ type: 'enum', enum: PlayerPosition })
+  @Column({ type: 'simple-enum', enum: PlayerPosition })
   position: PlayerPosition;
 
   @OneToOne(() => TransferListing, (listing) => listing.player)

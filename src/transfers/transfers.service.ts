@@ -47,6 +47,11 @@ export class TransfersService {
     private readonly cacheManager: Cache,
   ) {}
 
+  private supportsLocks() {
+    const type = (this.dataSource.options as { type?: string }).type;
+    return type === 'postgres';
+  }
+
   /**
    * Retrieves a list of transfer listings based on optional filters.
    * @param filters Optional filters to apply to the query.
@@ -241,15 +246,16 @@ export class TransfersService {
       result = await this.dataSource.transaction(
         async (manager): Promise<BuyResult> => {
           // re-load listing with row-level locks by using manager and locking the relevant rows
-          const listing = await manager
+          let listingQb = manager
             .getRepository(TransferListing)
             .createQueryBuilder('listing')
-            .setLock('pessimistic_write')
             .innerJoinAndSelect('listing.player', 'player')
             .innerJoinAndSelect('player.team', 'team')
             .innerJoinAndSelect('team.user', 'user')
-            .where('listing.id = :id', { id: listingId })
-            .getOne();
+            .where('listing.id = :id', { id: listingId });
+          if (this.supportsLocks())
+            listingQb = listingQb.setLock('pessimistic_write');
+          const listing = await listingQb.getOne();
 
           if (!listing) throw new NotFoundException('Listing not found');
 
@@ -269,24 +275,26 @@ export class TransfersService {
 
           // Lock buyer team and seller team and player rows to avoid race conditions
           // Fetch buyerTeam, sellerTeam with FOR UPDATE via query builder (manager)
-          const buyerTeamLocked = await manager
+          let buyerTeamQb = manager
             .getRepository(Team)
             .createQueryBuilder('team')
-            .setLock('pessimistic_write')
             .leftJoinAndSelect('team.user', 'user')
-            .where('user.id = :userId', { userId: buyerUserId })
-            .getOne();
+            .where('user.id = :userId', { userId: buyerUserId });
+          if (this.supportsLocks())
+            buyerTeamQb = buyerTeamQb.setLock('pessimistic_write');
+          const buyerTeamLocked = await buyerTeamQb.getOne();
 
           if (!buyerTeamLocked)
             throw new BadRequestException('Buyer has no team');
 
           // Re-fetch seller team with lock
-          const sellerTeamLocked = await manager
+          let sellerTeamQb = manager
             .getRepository(Team)
             .createQueryBuilder('team')
-            .setLock('pessimistic_write')
-            .where('team.id = :id', { id: sellerTeam.id })
-            .getOne();
+            .where('team.id = :id', { id: sellerTeam.id });
+          if (this.supportsLocks())
+            sellerTeamQb = sellerTeamQb.setLock('pessimistic_write');
+          const sellerTeamLocked = await sellerTeamQb.getOne();
 
           if (!sellerTeamLocked)
             throw new BadRequestException('Seller has no team');

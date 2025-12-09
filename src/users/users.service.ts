@@ -4,6 +4,7 @@ import { Repository } from 'typeorm';
 import { User } from './entities/user.entity';
 import { CreateUserDto } from './dto/create-user.dto';
 import { InjectQueue } from '@nestjs/bull';
+import { Optional } from '@nestjs/common';
 import { Queue } from 'bullmq';
 
 @Injectable()
@@ -12,8 +13,9 @@ export class UsersService {
     @InjectRepository(User)
     private readonly usersRepo: Repository<User>,
 
+    @Optional()
     @InjectQueue('team-creation')
-    private readonly teamCreationQueue: Queue,
+    private readonly teamCreationQueue?: Queue,
   ) {}
 
   /**
@@ -46,6 +48,7 @@ export class UsersService {
    * @returns A Promise that resolves to the BullMQ Job object.
    */
   async enqueueTeamCreation(userId: string) {
+    if (!this.teamCreationQueue) return;
     return this.teamCreationQueue.add('create-team', { userId });
   }
 

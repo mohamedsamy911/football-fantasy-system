@@ -11,11 +11,18 @@ import { TeamCreationProcessor } from './jobs/team-creation.processor';
   imports: [
     TypeOrmModule.forFeature([Team, Player]),
 
-    BullModule.registerQueue({
-      name: 'team-creation',
-    }),
+    ...(process.env.NODE_ENV === 'test'
+      ? []
+      : [
+          BullModule.registerQueue({
+            name: 'team-creation',
+          }),
+        ]),
   ],
-  providers: [TeamsService, TeamCreationProcessor],
+  providers: [
+    TeamsService,
+    ...(process.env.NODE_ENV === 'test' ? [] : [TeamCreationProcessor]),
+  ],
   controllers: [TeamsController],
   exports: [TeamsService],
 })

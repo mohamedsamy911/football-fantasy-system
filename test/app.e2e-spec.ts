@@ -1,11 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { INestApplication } from '@nestjs/common';
-import * as request from 'supertest';
-import { App } from 'supertest/types';
+import { INestApplication, VersioningType } from '@nestjs/common';
+import request from 'supertest';
 import { AppModule } from './../src/app.module';
 
-describe('AppController (e2e)', () => {
-  let app: INestApplication<App>;
+describe('App (e2e)', () => {
+  let app: INestApplication;
 
   beforeEach(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -13,13 +12,18 @@ describe('AppController (e2e)', () => {
     }).compile();
 
     app = moduleFixture.createNestApplication();
+    app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
     await app.init();
   });
 
-  it('/ (GET)', () => {
-    return request(app.getHttpServer())
-      .get('/')
-      .expect(200)
-      .expect('Hello World!');
+  it('/v1/auth/identify (POST) registers user and returns token', async () => {
+    const server = app.getHttpServer() as unknown as import('http').Server;
+    const res = await request(server)
+      .post('/v1/auth/identify')
+      .send({ email: 'e2e@example.com', password: 'password123' })
+      .expect(201);
+    const body = res.body as { token: string };
+    expect(typeof body.token).toBe('string');
+    expect(body.token.length).toBeGreaterThan(10);
   });
 });

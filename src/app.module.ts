@@ -23,27 +23,50 @@ import { getRedisConfig } from './config/cache.config';
     // -------------------------------
     // Database (PostgreSQL)
     // -------------------------------
-    TypeOrmModule.forRoot({
-      type: 'postgres',
-      host: process.env.DB_HOST || 'localhost',
-      port: Number(process.env.DB_PORT) || 5432,
-      username: process.env.DB_USER || 'postgres',
-      password: process.env.DB_PASSWORD || 'postgres',
-      database: process.env.DB_NAME || 'football_manager',
-      autoLoadEntities: true, // auto-detect entities
-      synchronize: process.env.NODE_ENV !== 'production', // DISABLED in production - use migrations
-      logging: false,
-    }),
+    TypeOrmModule.forRoot(
+      process.env.DB_TYPE === 'sqlite'
+        ? {
+            type: 'sqlite',
+            database: ':memory:',
+            autoLoadEntities: true,
+            synchronize: true,
+            logging: false,
+          }
+        : process.env.DB_TYPE === 'sqljs' || process.env.NODE_ENV === 'test'
+          ? {
+              type: 'sqljs',
+              autoSave: false,
+              location: 'db',
+              autoLoadEntities: true,
+              synchronize: true,
+              logging: false,
+            }
+          : {
+              type: 'postgres',
+              host: process.env.DB_HOST || 'localhost',
+              port: Number(process.env.DB_PORT) || 5432,
+              username: process.env.DB_USER || 'postgres',
+              password: process.env.DB_PASSWORD || 'postgres',
+              database: process.env.DB_NAME || 'football_manager',
+              autoLoadEntities: true,
+              synchronize: process.env.NODE_ENV !== 'production',
+              logging: false,
+            },
+    ),
 
     // -------------------------------
     // BullMQ (Redis)
     // -------------------------------
-    BullModule.forRoot({
-      connection: {
-        host: process.env.REDIS_HOST || 'localhost',
-        port: Number(process.env.REDIS_PORT) || 6379,
-      },
-    }),
+    ...(process.env.NODE_ENV === 'test'
+      ? []
+      : [
+          BullModule.forRoot({
+            connection: {
+              host: process.env.REDIS_HOST || 'localhost',
+              port: Number(process.env.REDIS_PORT) || 6379,
+            },
+          }),
+        ]),
 
     // -------------------------------
     // Cache (Redis)
